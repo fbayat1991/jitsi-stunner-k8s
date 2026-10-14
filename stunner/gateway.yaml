@@ -1,0 +1,17 @@
+# One TURN-UDP listener on 3478, shared by every Jitsi instance in the cluster.
+# The operator creates a LoadBalancer Service for it; Cilium LB-IPAM assigns <LB_INTERNAL_IP>,
+# and the edge router NATs <PUBLIC_IP>:3478/udp to that address.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: stunner-gateway
+  namespace: stunner
+  annotations:
+    stunner.l7mp.io/gateway-config-name: stunner-gatewayconfig
+    io.cilium/lb-ipam-ips: "<LB_INTERNAL_IP>"   # pin the LoadBalancer IP (Cilium LB-IPAM)
+spec:
+  gatewayClassName: stunner
+  listeners:
+    - name: udp-listener
+      port: 3478
+      protocol: TURN-UDP

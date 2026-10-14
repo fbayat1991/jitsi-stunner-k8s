@@ -1,0 +1,15 @@
+# Long-term (ephemeral / TURN REST API) authentication.
+# Prosody generates credentials as  username = <expiry-timestamp>[:user]
+#                                   password = base64(HMAC-SHA1(secret, username))
+# so the secret here MUST be identical to TURN_CREDENTIALS in every Jitsi (Prosody) instance.
+apiVersion: stunner.l7mp.io/v1
+kind: GatewayConfig
+metadata:
+  name: stunner-gatewayconfig
+  namespace: stunner
+spec:
+  realm: stunner.l7mp.io
+  authType: longterm
+  sharedSecret: "<TURN_SHARED_SECRET>"
+  # Uncomment while debugging, then remove again:
+  # logLevel: "all:DEBUG"

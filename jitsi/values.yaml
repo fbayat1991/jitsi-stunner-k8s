@@ -1,0 +1,81 @@
+# Minimal Helm values for one Jitsi instance behind STUNner.
+# Keep everything else at chart defaults.
+#
+# Rules learned the hard way:
+#  - Never leave an empty key (e.g. "defaults:"). In Helm a null value DELETES the chart default
+#    and templates fail with "nil pointer evaluating interface {}".
+#  - JVB and jicofo are Java: give them real CPU and memory, and keep *_MAX_MEMORY below the limit.
+#
+# Per customer, change: publicURL, ingress host, TLS secretName (and the release name).
+
+publicURL: "https://jitsi.example.com"           # per customer
+enableAuth: false
+enableGuests: true
+
+web:
+  custom:
+    configs:
+      _custom_config_js: |
+        // REQUIRED: by default Jitsi filters out TURN servers with transport=udp for the
+        // JVB connection, assuming JVB itself is reachable over UDP. Behind STUNner it is not.
+        config.useTurnUdp = true;
+        config.p2p = { enabled: false };
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: "letsencrypt"
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    hosts:
+      - host: jitsi.example.com                   # per customer
+        paths: ["/"]
+    tls:
+      - secretName: jitsi-example-tls             # per customer, must be unique
+        hosts:
+          - jitsi.example.com                     # per customer
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 100m, memory: 128Mi }
+
+prosody:
+  # Prosody advertises TURN to clients via XEP-0215 (external_services).
+  # Use TURN_* (plain TURN). TURNS_* would mean TURN over TLS, which this listener is not.
+  extraEnvs:
+    TURN_HOST: "<PUBLIC_IP>"
+    TURN_PORT: "3478"
+    TURN_TRANSPORT: "udp"
+  extraEnvFrom:
+    - secretRef:
+        name: jitsi-turn                          # contains TURN_CREDENTIALS=<TURN_SHARED_SECRET>
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 100m, memory: 128Mi }
+
+jicofo:
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits:   { cpu: 500m, memory: 768Mi }
+  extraEnvs:
+    JICOFO_MAX_MEMORY: "512m"
+
+jvb:
+  replicaCount: 1
+  # JVB must advertise ONLY its pod IP: STUNner allows relaying to backend endpoint IPs only.
+  # Do NOT set JVB_ADVERTISE_IPS, useNodeIP, hostNetwork or hostPort.
+  useNodeIP: false
+  useHostPort: false
+  useHostNetwork: false
+  disableStun: true
+  stunServers: ""
+  UDPPort: 10000
+  portRangeSize: 1
+  service:
+    enabled: true
+    type: ClusterIP
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits:   { cpu: 2,    memory: 1536Mi }
+  extraEnvs:
+    VIDEOBRIDGE_MAX_MEMORY: "1024m"

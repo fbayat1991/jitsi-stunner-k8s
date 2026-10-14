@@ -1,0 +1,53 @@
+# End-to-end test of the TURN path without Jitsi:
+#   internet -> edge NAT -> LoadBalancer -> STUNner -> this pod
+#
+#   kubectl apply -f debug/udp-echo.yaml
+#   kubectl -n stunner get pod udp-echo -o jsonpath='{.status.podIP}{"\n"}'
+#
+# Then, from a machine on the internet:
+#   ./debug/gen-turn-credentials.sh '<TURN_SHARED_SECRET>' <PUBLIC_IP>    # copy the turncat URI
+#   turncat --log=all:INFO - "<turncat URI>" udp://<POD_IP>:9001
+# Type a line and press Enter: it must come back.
+#
+# turncat ships with STUNner (GitHub releases of l7mp/stunner) or:
+#   go install github.com/l7mp/stunner/cmd/turncat@latest
+#
+# Clean up afterwards:  kubectl delete -f debug/udp-echo.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: udp-echo
+  namespace: stunner
+  labels:
+    app: udp-echo
+spec:
+  containers:
+    - name: echo
+      image: nicolaka/netshoot
+      command: ["socat", "-d", "-d", "UDP4-LISTEN:9001,fork,reuseaddr", "EXEC:cat"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: udp-echo
+  namespace: stunner
+spec:
+  selector:
+    app: udp-echo
+  ports:
+    - name: udp
+      port: 9001
+      protocol: UDP
+---
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: UDPRoute
+metadata:
+  name: udp-echo-route
+  namespace: stunner
+spec:
+  parentRefs:
+    - name: stunner-gateway
+  rules:
+    - backendRefs:
+        - name: udp-echo
+          port: 9001

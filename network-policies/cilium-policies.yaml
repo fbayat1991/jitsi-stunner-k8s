@@ -1,0 +1,94 @@
+# Optional CiliumClusterwideNetworkPolicies for this setup.
+#
+# Selecting a pod with an ingress policy makes it default-deny for ingress, so every path
+# below must be allowed explicitly. Policies that DROP traffic show up as timeouts, not errors:
+#   hubble observe --verdict DROPPED -f
+#
+# Jitsi namespaces are selected by label so new tenants are covered automatically:
+#   kubectl label namespace <jitsi-namespace> app-type=jitsi
+#
+# Adjust <INGRESS_NAMESPACE> to the namespace of your ingress controller (e.g. ingress-nginx).
+
+# ---------------------------------------------------------------------
+# 1) STUNner control plane + data plane
+#    - stunnerd (ns: stunner) -> operator CDS :13478 and auth :8088 (ns: stunner-system)
+#    - public TURN on 3478 into stunnerd
+# ---------------------------------------------------------------------
+---
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: stunner
+spec:
+  endpointSelector:
+    matchExpressions:
+      - key: k8s:io.kubernetes.pod.namespace
+        operator: In
+        values: [stunner, stunner-system]
+  ingress:
+    # kube-apiserver -> webhooks, kubelet -> probes
+    - fromEntities: [kube-apiserver, host, remote-node]
+    # traffic between the two STUNner namespaces (CDS websocket, auth service)
+    - fromEndpoints:
+        - matchExpressions:
+            - key: k8s:io.kubernetes.pod.namespace
+              operator: In
+              values: [stunner, stunner-system]
+    # TURN from anywhere (internet via edge NAT + LoadBalancer)
+    - fromEntities: [all]
+      toPorts:
+        - ports:
+            - { port: "3478", protocol: UDP }
+
+# ---------------------------------------------------------------------
+# 2) Jitsi instances
+# ---------------------------------------------------------------------
+---
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: jitsi
+spec:
+  endpointSelector:
+    matchLabels:
+      k8s:io.cilium.k8s.namespace.labels.app-type: jitsi
+  ingress:
+    - fromEntities: [kube-apiserver, host, remote-node]
+    # web <-> prosody <-> jicofo <-> jvb inside the same namespace
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.cilium.k8s.namespace.labels.app-type: jitsi
+    # ingress controller -> Jitsi web AND cert-manager HTTP-01 solver pods
+    # (the solver pod runs in the Certificate's namespace, i.e. the Jitsi namespace)
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: <INGRESS_NAMESPACE>
+    # relayed media from STUNner to JVB
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: stunner
+      toPorts:
+        - ports:
+            - { port: "10000", protocol: UDP }
+    # optional: monitoring
+    # - fromEndpoints:
+    #     - matchLabels:
+    #         k8s:io.kubernetes.pod.namespace: monitoring
+
+# ---------------------------------------------------------------------
+# 3) cert-manager (only if you also restrict this namespace)
+# ---------------------------------------------------------------------
+---
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: cert-manager
+spec:
+  endpointSelector:
+    matchLabels:
+      k8s:io.kubernetes.pod.namespace: cert-manager
+  ingress:
+    - fromEntities: [kube-apiserver, host, remote-node]
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: cert-manager

@@ -1,0 +1,30 @@
+# Cilium LB-IPAM + L2 announcements for the STUNner Gateway Service.
+# Requires Cilium with:  l2announcements.enabled=true  and  kubeProxyReplacement=true
+#
+# API versions differ between Cilium releases. Check yours with:
+#   kubectl api-resources | grep -iE 'loadbalancerippool|l2announcement'
+# and adjust apiVersion below if needed. If you announce LoadBalancer IPs via BGP instead of L2,
+# keep the pool and replace the L2 policy with your BGP advertisement.
+apiVersion: cilium.io/v2
+kind: CiliumLoadBalancerIPPool
+metadata:
+  name: stunner-pool
+spec:
+  blocks:
+    - start: "<LB_INTERNAL_IP>"
+      stop: "<LB_INTERNAL_IP>"
+  serviceSelector:
+    matchLabels:
+      io.kubernetes.service.namespace: stunner
+---
+apiVersion: cilium.io/v2alpha1
+kind: CiliumL2AnnouncementPolicy
+metadata:
+  name: stunner-l2
+spec:
+  serviceSelector:
+    matchLabels:
+      io.kubernetes.service.namespace: stunner
+  loadBalancerIPs: true
+  interfaces:
+    - ^eth[0-9]+            # adjust to your node interface names

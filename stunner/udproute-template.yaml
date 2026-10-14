@@ -1,0 +1,36 @@
+# One UDPRoute per Jitsi instance. Copy this file per customer and replace <CUSTOMER>.
+#
+# STUNner only relays to IPs that belong to the backends of routes attached to the listener.
+# Backends are resolved to the JVB Service's ClusterIP AND its pod IPs (EndpointSlices),
+# which is what JVB advertises as its ICE candidate.
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: UDPRoute
+metadata:
+  name: jitsi-<CUSTOMER>-jvb-route
+  namespace: stunner
+spec:
+  parentRefs:
+    - name: stunner-gateway
+      namespace: stunner
+  rules:
+    - backendRefs:
+        - name: jitsi-<CUSTOMER>-jitsi-meet-jvb   # <release-name>-jitsi-meet-jvb
+          namespace: jitsi                         # namespace of the Jitsi release
+          port: 10000
+---
+# Allows UDPRoutes in the "stunner" namespace to reference Services in the Jitsi namespace.
+# Without "name" it covers every Service in the namespace, so one grant serves all customers
+# deployed there. Create one per namespace if each customer has its own namespace.
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-stunner-to-jitsi
+  namespace: jitsi
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: UDPRoute
+      namespace: stunner
+  to:
+    - group: ""
+      kind: Service

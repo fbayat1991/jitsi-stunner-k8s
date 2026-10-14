@@ -1,0 +1,14 @@
+# Files with real values (secrets, real IPs, real domains) stay local
+*.local.yaml
+*.local.yml
+secrets/
+*.env
+.env*
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+__pycache__/
+*.pyc

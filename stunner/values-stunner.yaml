@@ -1,0 +1,77 @@
+# Helm values for the STUNner gateway operator (chart: stunner/stunner-gateway-operator, version 1.1.0)
+#
+#   helm install stunner stunner/stunner-gateway-operator --version 1.1.0 \
+#     -n stunner-system --create-namespace -f stunner/values-stunner.yaml
+#
+# Replace the image names with your private registry mirror if you have one.
+
+stunnerAuthService:
+  enabled: true
+  deployment:
+    replicas: 1
+    nodeSelector:
+      kubernetes.io/os: linux
+    container:
+      authService:
+        image:
+          name: l7mp/stunner-auth-server
+          tag: 1.1.0
+          pullPolicy: IfNotPresent
+        args:
+          - --port=8088
+          - -v
+        resources:
+          requests: { cpu: 10m,  memory: 64Mi }
+          limits:   { cpu: 200m, memory: 128Mi }
+        securityContext:
+          runAsNonRoot: true
+
+stunnerGatewayOperator:
+  enabled: true
+  deployment:
+    nodeSelector:
+      kubernetes.io/os: linux
+    securityContext:
+      runAsNonRoot: true
+    container:
+      manager:
+        image:
+          name: l7mp/stunner-gateway-operator
+          tag: 1.1.0
+          pullPolicy: IfNotPresent
+        # NOTE: --leader-elect is intentionally NOT set.
+        # With a single operator replica it gives no benefit, and if the kube-apiserver is
+        # slow to answer, the operator exits with "leader election lost". Every restart drops
+        # stunnerd's config watch (CDS), which can leave stunnerd on a stale config
+        # (old JVB pod IPs -> "permission denied ... no route to endpoint").
+        # Make sure --dataplane-mode=managed is present after install:
+        #   kubectl -n stunner-system get deploy -o jsonpath='{..args}'
+        args:
+          - --health-probe-bind-address=:8081
+          - --metrics-bind-address=127.0.0.1:8080
+          - --zap-log-level=info
+        resources:
+          requests: { cpu: 250m,  memory: 128Mi }
+          limits:   { cpu: 1000m, memory: 512Mi }
+        securityContext:
+          allowPrivilegeEscalation: false
+
+  # Data plane (stunnerd) template, applied to every Gateway the operator manages
+  dataplane:
+    mode: managed
+    spec:
+      replicas: 1
+      command: ["stunnerd"]
+      args:
+        - -w
+        - --udp-thread-num=16
+      image:
+        name: l7mp/stunnerd
+        tag: 1.1.0
+        pullPolicy: IfNotPresent
+      hostNetwork: false
+      enableMetricsEndpoint: false
+      terminationGracePeriodSeconds: 3600
+      resources:
+        requests: { cpu: 500m, memory: 128Mi }
+        limits:   { cpu: 2,    memory: 512Mi }
